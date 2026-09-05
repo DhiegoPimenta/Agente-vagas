@@ -1,8 +1,3 @@
-config.yaml
-data/
-output/
-docs/
-_site/
 .venv/
 __pycache__/
 *.pyc
