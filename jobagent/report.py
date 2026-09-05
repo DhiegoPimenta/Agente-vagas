@@ -13,7 +13,7 @@ TEMPLATE = Template(
 <h1 style="font-size:20px;margin-bottom:2px">Curadoria de vagas - {{ nome }}</h1>
 <p style="color:#666;font-size:13px;margin-top:0">
   {{ date }} &middot; {{ collected }} vagas coletadas &middot; {{ new }} novas &middot;
-  {{ recommended|length }} recomendadas &middot; {{ discarded|length }} descartadas
+  {{ total_recommended }} recomendadas{% if hidden_recommended %} (mostrando as {{ recommended|length }} melhores){% endif %} &middot; {{ discarded|length }} descartadas
 </p>
 
 <h2 style="font-size:16px;border-bottom:2px solid #eee;padding-bottom:4px">Aplicamos por voce</h2>
@@ -47,6 +47,9 @@ TEMPLATE = Template(
     </ul>
   </div>
   {% endfor %}
+  {% if hidden_recommended %}
+  <p style="color:#888;font-size:12px">+ {{ hidden_recommended }} outra(s) tambem acima do corte, com score menor, nao mostradas.</p>
+  {% endif %}
 {% else %}
   <p style="color:#888;font-size:13px">Nenhuma vaga nova acima do corte (score &gt;= {{ min_score }}) hoje.</p>
 {% endif %}
@@ -71,12 +74,18 @@ TEMPLATE = Template(
 
 
 def build_report(cfg, collected, new, recommended, discarded, applied=None):
+    out_cfg = cfg.get("output", {})
+    top = int(out_cfg.get("top_recommend", 0) or 0)
+    shown = recommended[:top] if top else list(recommended)
+
     html = TEMPLATE.render(
         nome=cfg.get("candidate", {}).get("nome", "candidato"),
         date=datetime.now().strftime("%d/%m/%Y %H:%M"),
         collected=collected,
         new=new,
-        recommended=recommended,
+        recommended=shown,
+        total_recommended=len(recommended),
+        hidden_recommended=len(recommended) - len(shown),
         discarded=discarded,
         applied=applied or [],
         min_score=cfg.get("scoring", {}).get("min_score_recommend", 55),
@@ -84,7 +93,6 @@ def build_report(cfg, collected, new, recommended, discarded, applied=None):
             k for k, v in (cfg.get("sources") or {}).items() if isinstance(v, dict) and v.get("enabled")
         ),
     )
-    out_cfg = cfg.get("output", {})
     out_dir = Path(out_cfg.get("dir", "output"))
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"vagas-{datetime.now().strftime('%Y%m%d-%H%M%S')}.html"

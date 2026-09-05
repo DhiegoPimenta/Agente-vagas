@@ -151,7 +151,11 @@ def llm_score(job: Job, cand: dict, model: str) -> Scored:
         "Voce avalia o fit entre uma vaga e o perfil de um candidato.\n"
         'Responda SOMENTE com JSON: {"score": <int 0-100>, "reasons": [<str>], "flags": [<str>]}.\n'
         "flags validas: stack_match, senioridade_ok, modalidade_ok, faixa_salarial_compativel, salario_informado.\n"
-        "Nao invente dados que nao estejam no perfil ou na vaga.\n\n"
+        "Nao invente dados que nao estejam no perfil ou na vaga.\n"
+        "Se o perfil nao trouxer resumo de experiencia, avalie o fit apenas pelos cargos-alvo, "
+        "stacks e preferencias -- NAO penalize por experiencia desconhecida.\n"
+        "Rubrica do score: 70-100 = stack e senioridade batem e a modalidade e compativel; "
+        "40-69 = batem em parte; 0-39 = area, stack ou senioridade claramente fora do alvo.\n\n"
         f"PERFIL:\n{json.dumps(profile, ensure_ascii=False, indent=2)}\n\n"
         "VAGA:\n"
         f"titulo: {job.title}\nempresa: {job.company}\nlocal: {job.location}\nremoto: {job.remote}\n"

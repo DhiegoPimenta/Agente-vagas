@@ -53,7 +53,7 @@ scoring:
   auto_apply_threshold: 90                 # (auto-apply está DESLIGADO nesta versão)
   # O LLM não roda em todas as vagas: a heurística filtra e só as mais
   # promissoras vão pro Claude (mais rápido e mais barato).
-  llm_max_jobs: 60                         # teto de chamadas ao LLM por execução
+  llm_max_jobs: 15                         # teto de chamadas ao LLM por execução
   llm_min_heuristic: 40                    # só refina no LLM se a heurística deu >= isso
 
 email:
@@ -70,6 +70,7 @@ output:
   dir: "output"
   db_path: "data/jobagent.sqlite3"
   pages_dir: "docs"        # grava tambem docs/index.html (o GitHub Pages publica essa pasta)
+  top_recommend: 15        # mostra no relatorio as N melhores recomendadas (0 = todas)
 
 safety:
   auto_apply_enabled: false               # trava dura — auto-apply nem está implementado nesta versão
