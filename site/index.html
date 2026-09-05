@@ -81,6 +81,9 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]
 ));
+const regionTag = (r) => r === "br"
+  ? '<span title="Brasil / remoto BR">🇧🇷</span>'
+  : '<span title="Exterior / remoto worldwide">🌍</span>';
 
 async function load() {
   const status = $("#status");
@@ -123,7 +126,7 @@ function card(j) {
       <a class="title" href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.title)}</a>
       <span class="badge">${esc(j.score)}</span>
     </div>
-    <div class="meta">${esc(j.company || "empresa não informada")} · ${esc(j.location || "—")} · <i>${esc(j.source)}</i></div>
+    <div class="meta">${regionTag(j.region)} ${esc(j.company || "empresa não informada")} · ${esc(j.location || "—")} · <i>${esc(j.source)}</i></div>
     ${j.salary ? `<div class="sal">Salário: ${esc(j.salary)}</div>` : ""}
     <ul class="reasons">${(j.reasons || []).map((r) => `<li>${esc(r)}</li>`).join("")}</ul>
     ${j.analysis_html ? `<details><summary>Saber mais</summary><div class="analysis">${j.analysis_html}</div></details>` : ""}
