@@ -30,10 +30,11 @@ TEMPLATE = Template(
 
 <h2 style="font-size:16px;border-bottom:2px solid #eee;padding-bottom:4px">Recomendadas pra voce aplicar</h2>
 {% if recommended %}
+<div id="recs">
   {% for s in recommended %}
-  <div style="border:1px solid #e5e5e5;border-radius:8px;padding:12px;margin:10px 0">
+  <div class="rec"{% if loop.index0 >= page_size %} hidden{% endif %} style="border:1px solid #e5e5e5;border-radius:8px;padding:12px;margin:10px 0">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
-      <a href="{{ s.job.url }}" style="font-weight:600;font-size:15px;color:#0b5cff;text-decoration:none">{{ s.job.title }}</a>
+      <a href="{{ s.job.url }}" target="_blank" rel="noopener" style="font-weight:600;font-size:15px;color:#0b5cff;text-decoration:none">{{ s.job.title }}</a>
       <span style="background:#0b5cff;color:#fff;border-radius:12px;padding:2px 9px;font-size:12px;white-space:nowrap">{{ s.score }}</span>
     </div>
     <div style="color:#444;font-size:13px;margin:4px 0">
@@ -45,11 +46,21 @@ TEMPLATE = Template(
     <ul style="font-size:13px;color:#555;margin:6px 0 0 18px;padding:0">
       {% for r in s.reasons %}<li>{{ r }}</li>{% endfor %}
     </ul>
+    {% if s.analysis %}
+    <details style="margin-top:6px">
+      <summary style="cursor:pointer;color:#0b5cff;font-size:13px">Saber mais</summary>
+      <div style="font-size:13px;color:#333;border-left:2px solid #eee;padding-left:10px;margin-top:6px">{{ s.analysis|safe }}</div>
+    </details>
+    {% endif %}
   </div>
   {% endfor %}
-  {% if hidden_recommended %}
-  <p style="color:#888;font-size:12px">+ {{ hidden_recommended }} outra(s) tambem acima do corte, com score menor, nao mostradas.</p>
-  {% endif %}
+</div>
+{% if recommended|length > page_size %}
+<button id="more" style="width:100%;padding:9px;border:1px solid #0b5cff;background:#fff;color:#0b5cff;border-radius:8px;font-size:14px;cursor:pointer">Buscar mais {{ page_step }}</button>
+{% endif %}
+{% if hidden_recommended %}
+<p style="color:#888;font-size:12px">+ {{ hidden_recommended }} outra(s) tambem acima do corte, com score menor, fora desta lista.</p>
+{% endif %}
 {% else %}
   <p style="color:#888;font-size:13px">Nenhuma vaga nova acima do corte (score &gt;= {{ min_score }}) hoje.</p>
 {% endif %}
@@ -68,6 +79,18 @@ TEMPLATE = Template(
 <p style="color:#bbb;font-size:11px;margin-top:24px">
   Gerado pelo agente-vagas &middot; fontes: {{ sources }}. LinkedIn e Indeed nao sao automatizados.
 </p>
+<script>
+(function () {
+  var btn = document.getElementById("more");
+  if (!btn) return;
+  var step = {{ page_step }};
+  btn.addEventListener("click", function () {
+    var hidden = document.querySelectorAll("#recs .rec[hidden]");
+    for (var i = 0; i < step && i < hidden.length; i++) hidden[i].hidden = false;
+    if (document.querySelectorAll("#recs .rec[hidden]").length === 0) btn.hidden = true;
+  });
+})();
+</script>
 </body></html>
 """
 )
@@ -86,6 +109,8 @@ def build_report(cfg, collected, new, recommended, discarded, applied=None):
         recommended=shown,
         total_recommended=len(recommended),
         hidden_recommended=len(recommended) - len(shown),
+        page_size=int(out_cfg.get("page_size", 10) or 10),
+        page_step=int(out_cfg.get("page_step", 5) or 5),
         discarded=discarded,
         applied=applied or [],
         min_score=cfg.get("scoring", {}).get("min_score_recommend", 55),

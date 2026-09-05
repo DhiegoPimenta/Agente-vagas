@@ -8,7 +8,7 @@ from .forms import classify_form
 from .models import Job, Scored
 from .report import build_report
 from .routing import route
-from .scoring import score_all
+from .scoring import maybe_analyze, score_all
 from .sources import BLOCKED, build_sources
 from .store import Store
 
@@ -52,23 +52,28 @@ def run(config_path: str, dry_run: bool = False) -> int:
     for s in scored:
         s.form_complexity = classify_form(s.job)
         route(s, cfg)
-        if not dry_run:
-            store.upsert(s)
 
     recommended = sorted((s for s in scored if s.route == "recomendada"), key=lambda s: s.score, reverse=True)
     discarded = sorted((s for s in scored if s.route == "descartada"), key=lambda s: s.score, reverse=True)
     applied = [s for s in scored if s.route == "auto_apply"]  # sempre vazio nesta versao
 
+    print("[4] Analise das recomendadas")
+    maybe_analyze(recommended, cand, cfg)
+
+    if not dry_run:
+        for s in scored:
+            store.upsert(s)
+
     html, path = build_report(cfg, len(deduped), len(fresh), recommended, discarded, applied)
-    print(f"[4] Relatorio: {path}  ({len(recommended)} recomendadas, {len(discarded)} descartadas)")
+    print(f"[5] Relatorio: {path}  ({len(recommended)} recomendadas, {len(discarded)} descartadas)")
 
     if dry_run:
-        print("[5] dry-run: nada gravado no banco, e-mail nao enviado.")
+        print("[6] dry-run: nada gravado no banco, e-mail nao enviado.")
         store.conn.close()
         return 0
 
     store.record_run(len(deduped), len(fresh), len(recommended), len(discarded))
-    print(f"[5] {send_email(cfg, html)}")
+    print(f"[6] {send_email(cfg, html)}")
     store.mark_emailed([s.job.uid for s in recommended])
     store.close()
     return 0

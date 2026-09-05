@@ -70,7 +70,13 @@ output:
   dir: "output"
   db_path: "data/jobagent.sqlite3"
   pages_dir: "docs"        # grava tambem docs/index.html (o GitHub Pages publica essa pasta)
-  top_recommend: 15        # mostra no relatorio as N melhores recomendadas (0 = todas)
+  top_recommend: 40        # quantas recomendadas entram no HTML (0 = todas)
+  page_size: 10            # quantas aparecem de cara; o resto vem no botao "buscar mais"
+  page_step: 5             # quantas o botao "buscar mais" revela por clique
+
+analysis:
+  enabled: true            # gera a analise "Saber mais" por vaga (usa o LLM)
+  max_jobs: 15             # analisa so as N primeiras recomendadas (controla custo)
 
 safety:
   auto_apply_enabled: false               # trava dura — auto-apply nem está implementado nesta versão

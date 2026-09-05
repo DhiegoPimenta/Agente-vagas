@@ -221,3 +221,80 @@ def score_all(jobs: list[Job], cand: dict, cfg: dict) -> list[Scored]:
             scored[i].reasons.append(f"(LLM falhou: {exc}; mantida heuristica)")
     print(f"    LLM refinou {refined}/{len(candidates)} vagas (heuristica >= {min_heur})")
     return scored
+
+
+# ---------------------------------------------------------------------------
+# Analise "Saber mais" por vaga (pre-gerada no run diario)
+# ---------------------------------------------------------------------------
+
+def _analysis_html(data: dict) -> str:
+    import html as _html
+
+    def _ul(items) -> str:
+        lis = "".join(f"<li>{_html.escape(str(x))}</li>" for x in (items or [])[:4])
+        return f"<ul style='margin:4px 0 8px 18px;padding:0'>{lis}</ul>" if lis else ""
+
+    parts = [f"<p style='margin:6px 0'>{_html.escape(str(data.get('fit', '')))}</p>"]
+    for key, label in (
+        ("atencao", "Pontos de atencao"),
+        ("revisar", "Revisar antes"),
+        ("perguntas_recrutador", "Provavel na entrevista"),
+    ):
+        if data.get(key):
+            parts.append(f"<b style='font-size:12px'>{label}</b>{_ul(data.get(key))}")
+    return "".join(parts)
+
+
+def analyze_job(job: Job, cand: dict, model: str) -> str:
+    """Gera a analise da vaga como HTML seguro (texto do modelo ja escapado)."""
+    import anthropic
+
+    client = anthropic.Anthropic(timeout=25.0, max_retries=2)
+    profile = {
+        k: cand.get(k)
+        for k in (
+            "cargo_alvo", "aceita_senioridades", "stack_principal",
+            "stack_secundaria", "modalidade", "localizacao_preferida", "resumo_curriculo",
+        )
+    }
+    prompt = (
+        "Com base no PERFIL e na VAGA, gere uma analise curta em portugues para o "
+        "candidato decidir se aplica.\n"
+        'Responda SOMENTE com JSON: {"fit": <str>, "atencao": [<str>], '
+        '"revisar": [<str>], "perguntas_recrutador": [<str>]}.\n'
+        "fit: 2-3 frases sobre o encaixe. Cada lista: no maximo 4 itens curtos.\n"
+        "Se o perfil nao tiver resumo de experiencia, foque em cargos-alvo e stacks; "
+        "nao invente experiencia.\n\n"
+        f"PERFIL:\n{json.dumps(profile, ensure_ascii=False, indent=2)}\n\n"
+        "VAGA:\n"
+        f"titulo: {job.title}\nempresa: {job.company}\nlocal: {job.location}\n"
+        f"descricao: {job.description[:4000]}\n"
+    )
+    msg = client.messages.create(
+        model=model,
+        max_tokens=700,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    text = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
+    return _analysis_html(_extract_json(text))
+
+
+def maybe_analyze(recommended: list[Scored], cand: dict, cfg: dict) -> None:
+    """Preenche s.analysis nas primeiras N recomendadas, se o LLM estiver ativo."""
+    acfg = cfg.get("analysis", {})
+    if not acfg.get("enabled", True):
+        return
+    mode = str(cfg.get("scoring", {}).get("mode", "auto")).lower()
+    if mode == "heuristic" or (mode == "auto" and not llm_available()):
+        return
+    model = cfg.get("scoring", {}).get("llm_model", "claude-sonnet-5")
+    limit = int(acfg.get("max_jobs", 15))
+
+    done = 0
+    for s in recommended[:limit]:
+        try:
+            s.analysis = analyze_job(s.job, cand, model)
+            done += 1
+        except Exception as exc:  # nao derruba o run por causa da analise
+            s.reasons.append(f"(analise indisponivel: {exc})")
+    print(f"    analise pre-gerada em {done}/{min(limit, len(recommended))} vagas")

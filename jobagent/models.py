@@ -39,3 +39,4 @@ class Scored:
     flags: list[str] = field(default_factory=list)
     form_complexity: str = "complexo"
     route: str = "descartada"  # recomendada | descartada | auto_apply
+    analysis: str = ""  # HTML seguro com a analise pre-gerada (so nas recomendadas exibidas)
