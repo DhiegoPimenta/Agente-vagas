@@ -81,9 +81,16 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => (
   { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]
 ));
-const regionTag = (r) => r === "br"
-  ? '<span title="Brasil / remoto BR">🇧🇷</span>'
-  : '<span title="Exterior / remoto worldwide">🌍</span>';
+const regionTag = (r) => {
+  const m = {
+    br:       ["BR",       "#0a7a2f", "Brasil / remoto BR"],
+    global:   ["GLOBAL",   "#0b5cff", "Remoto worldwide / região aberta"],
+    exterior: ["EXTERIOR", "#a15b00", "Presencial no exterior ou remoto travado noutro país"],
+  };
+  const [txt, col, tip] = m[r] || m.global;
+  return `<span title="${tip}" style="display:inline-block;font-size:10px;font-weight:700;`
+    + `letter-spacing:.04em;color:#fff;background:${col};border-radius:4px;padding:1px 5px;margin-right:2px">${txt}</span>`;
+};
 
 async function load() {
   const status = $("#status");
