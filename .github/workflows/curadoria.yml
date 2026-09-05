@@ -1,0 +1,55 @@
+name: Curadoria de vagas
+
+on:
+  schedule:
+    - cron: "0 10 * * *"   # 10:00 UTC = 07:00 America/Sao_Paulo
+  workflow_dispatch:        # permite rodar na mao pela aba Actions
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Preparar config
+        run: cp config.example.yaml config.yaml
+
+      - name: Rodar curadoria
+        env:
+          # Adicione ANTHROPIC_API_KEY em Settings > Secrets and variables > Actions.
+          # Sem ela, o score cai automaticamente para a heuristica (mode: auto).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # ADZUNA_APP_ID / ADZUNA_APP_KEY sao opcionais (habilite a fonte no config).
+          ADZUNA_APP_ID: ${{ secrets.ADZUNA_APP_ID }}
+          ADZUNA_APP_KEY: ${{ secrets.ADZUNA_APP_KEY }}
+        run: python run.py
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
