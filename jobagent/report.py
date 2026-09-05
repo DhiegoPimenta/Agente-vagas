@@ -52,6 +52,16 @@ TEMPLATE = Template(
       <div style="font-size:13px;color:#333;border-left:2px solid #eee;padding-left:10px;margin-top:6px">{{ s.analysis|safe }}</div>
     </details>
     {% endif %}
+    {% if chat_api is not none %}
+    <details class="chat" data-uid="{{ s.job.uid }}" style="margin-top:6px">
+      <summary style="cursor:pointer;color:#0b5cff;font-size:13px">Perguntar sobre a vaga</summary>
+      <div class="log" style="font-size:13px;margin:6px 0;white-space:pre-wrap;color:#333"></div>
+      <div style="display:flex;gap:6px">
+        <input class="q" placeholder="ex: precisa de ingles avancado?" style="flex:1;padding:6px;border:1px solid #ccc;border-radius:6px;font-size:13px">
+        <button class="ask" style="padding:6px 10px;border:1px solid #0b5cff;background:#0b5cff;color:#fff;border-radius:6px;cursor:pointer">Enviar</button>
+      </div>
+    </details>
+    {% endif %}
   </div>
   {% endfor %}
 </div>
@@ -91,12 +101,46 @@ TEMPLATE = Template(
   });
 })();
 </script>
+{% if chat_api is not none %}
+<script>
+(function () {
+  var API_BASE = {{ chat_api|tojson }};
+  document.querySelectorAll("details.chat").forEach(function (box) {
+    var uid = box.dataset.uid,
+      log = box.querySelector(".log"),
+      inp = box.querySelector(".q"),
+      btn = box.querySelector(".ask"),
+      history = [];
+    function add(who, text) { log.textContent += (who === "user" ? "\nVoce: " : "\nIA: ") + text + "\n"; }
+    async function ask() {
+      var q = inp.value.trim();
+      if (!q) return;
+      inp.value = ""; add("user", q); btn.disabled = true;
+      try {
+        var r = await fetch(API_BASE + "/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uid: uid, question: q, history: history }),
+        });
+        var d = await r.json().catch(function () { return {}; });
+        if (!r.ok) { add("ia", "(" + (d.detail || d.error || ("erro " + r.status)) + ")"); }
+        else { add("ia", d.answer); history.push({ role: "user", content: q }, { role: "assistant", content: d.answer }); }
+      } catch (e) { add("ia", "(sem conexao com o servidor)"); }
+      btn.disabled = false;
+    }
+    btn.addEventListener("click", ask);
+    inp.addEventListener("keydown", function (e) { if (e.key === "Enter") ask(); });
+  });
+})();
+</script>
+{% endif %}
 </body></html>
 """
 )
 
 
-def build_report(cfg, collected, new, recommended, discarded, applied=None):
+def build_report(cfg, collected, new, recommended, discarded, applied=None,
+                 *, write_files=True, chat_api=None):
     out_cfg = cfg.get("output", {})
     top = int(out_cfg.get("top_recommend", 0) or 0)
     shown = recommended[:top] if top else list(recommended)
@@ -111,6 +155,7 @@ def build_report(cfg, collected, new, recommended, discarded, applied=None):
         hidden_recommended=len(recommended) - len(shown),
         page_size=int(out_cfg.get("page_size", 10) or 10),
         page_step=int(out_cfg.get("page_step", 5) or 5),
+        chat_api=chat_api,
         discarded=discarded,
         applied=applied or [],
         min_score=cfg.get("scoring", {}).get("min_score_recommend", 55),
@@ -118,6 +163,9 @@ def build_report(cfg, collected, new, recommended, discarded, applied=None):
             k for k, v in (cfg.get("sources") or {}).items() if isinstance(v, dict) and v.get("enabled")
         ),
     )
+    if not write_files:
+        return html, None
+
     out_dir = Path(out_cfg.get("dir", "output"))
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"vagas-{datetime.now().strftime('%Y%m%d-%H%M%S')}.html"
