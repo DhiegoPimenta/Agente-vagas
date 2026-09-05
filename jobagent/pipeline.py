@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 from .config import load_config
 from .emailer import send_email
@@ -22,8 +24,24 @@ def _dedupe(jobs: list[Job]) -> list[Job]:
     return list(seen.values())
 
 
-def run(config_path: str, dry_run: bool = False) -> int:
-    cfg = load_config(config_path)
+@dataclass
+class RunResult:
+    collected: int
+    unique: int
+    new: int
+    recommended: list[Scored] = field(default_factory=list)
+    discarded: list[Scored] = field(default_factory=list)
+    applied: list[Scored] = field(default_factory=list)
+    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+def build_results(cfg: dict, *, use_store: bool = True) -> RunResult:
+    """
+    Executa coleta -> score -> roteamento -> analise e devolve os dados em memoria.
+
+    use_store=True usa o SQLite para nao reprocessar vagas ja vistas (CLI / cron).
+    use_store=False ignora o banco e trata tudo como novo (backend sem disco fixo).
+    """
     cand = cfg.get("candidate", {})
     coll = cfg.get("collection", {})
     lookback = int(coll.get("lookback_hours", 48))
@@ -42,10 +60,14 @@ def run(config_path: str, dry_run: bool = False) -> int:
     collected = [j for j in collected if j.source not in BLOCKED]
     deduped = _dedupe(collected)
 
-    store = Store(cfg.get("output", {}).get("db_path", "data/jobagent.sqlite3"))
-    already = store.known([j.uid for j in deduped])
-    fresh = [j for j in deduped if j.uid not in already]
-    print(f"[2] {len(collected)} coletadas - {len(deduped)} unicas - {len(fresh)} novas (nao vistas antes)")
+    store = None
+    if use_store:
+        store = Store(cfg.get("output", {}).get("db_path", "data/jobagent.sqlite3"))
+        already = store.known([j.uid for j in deduped])
+        fresh = [j for j in deduped if j.uid not in already]
+    else:
+        fresh = deduped
+    print(f"[2] {len(collected)} coletadas - {len(deduped)} unicas - {len(fresh)} novas")
 
     print("[3] Score + roteamento")
     scored: list[Scored] = score_all(fresh, cand, cfg)
@@ -60,20 +82,35 @@ def run(config_path: str, dry_run: bool = False) -> int:
     print("[4] Analise das recomendadas")
     maybe_analyze(recommended, cand, cfg)
 
-    if not dry_run:
+    if store is not None:
         for s in scored:
             store.upsert(s)
+        store.record_run(len(deduped), len(fresh), len(recommended), len(discarded))
+        store.close()
 
-    html, path = build_report(cfg, len(deduped), len(fresh), recommended, discarded, applied)
-    print(f"[5] Relatorio: {path}  ({len(recommended)} recomendadas, {len(discarded)} descartadas)")
+    return RunResult(
+        collected=len(collected),
+        unique=len(deduped),
+        new=len(fresh),
+        recommended=recommended,
+        discarded=discarded,
+        applied=applied,
+    )
+
+
+def run(config_path: str, dry_run: bool = False) -> int:
+    """Fluxo de linha de comando: gera o relatorio e (se ligado) manda e-mail."""
+    cfg = load_config(config_path)
+    result = build_results(cfg, use_store=not dry_run)
+
+    html, path = build_report(
+        cfg, result.unique, result.new, result.recommended, result.discarded, result.applied
+    )
+    print(f"[5] Relatorio: {path}  ({len(result.recommended)} recomendadas, {len(result.discarded)} descartadas)")
 
     if dry_run:
-        print("[6] dry-run: nada gravado no banco, e-mail nao enviado.")
-        store.conn.close()
+        print("[6] dry-run: e-mail nao enviado.")
         return 0
 
-    store.record_run(len(deduped), len(fresh), len(recommended), len(discarded))
     print(f"[6] {send_email(cfg, html)}")
-    store.mark_emailed([s.job.uid for s in recommended])
-    store.close()
     return 0
