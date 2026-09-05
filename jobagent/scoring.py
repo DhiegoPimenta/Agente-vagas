@@ -138,7 +138,7 @@ def _extract_json(text: str) -> dict:
 def llm_score(job: Job, cand: dict, model: str) -> Scored:
     import anthropic
 
-    client = anthropic.Anthropic()
+    client = anthropic.Anthropic(timeout=20.0, max_retries=2)
     profile = {
         k: cand.get(k)
         for k in (
@@ -174,18 +174,46 @@ def llm_score(job: Job, cand: dict, model: str) -> Scored:
 
 
 def score_job(job: Job, cand: dict, cfg: dict) -> Scored:
+    """Score de uma vaga isolada (usado em testes / uso pontual)."""
+    return score_all([job], cand, cfg)[0]
+
+
+def score_all(jobs: list[Job], cand: dict, cfg: dict) -> list[Scored]:
+    """
+    Duas fases:
+      1. heuristica em TODAS as vagas (rapido, sem custo);
+      2. se o LLM estiver ativo, refina apenas as mais promissoras
+         (heuristica >= llm_min_heuristic), no maximo llm_max_jobs.
+
+    Isso evita ~200 chamadas de LLM por execucao — o LLM entra so onde a
+    decisao de recomendar/descartar e de fato apertada.
+    """
     sc = cfg.get("scoring", {})
     mode = str(sc.get("mode", "auto")).lower()
     model = sc.get("llm_model", "claude-sonnet-5")
     use_llm = mode == "llm" or (mode == "auto" and llm_available())
-    if use_llm:
+
+    scored = [heuristic_score(job, cand) for job in jobs]
+    if not use_llm or not scored:
+        return scored
+
+    max_jobs = int(sc.get("llm_max_jobs", 60))
+    min_heur = int(sc.get("llm_min_heuristic", 40))
+    candidates = sorted(
+        (i for i, s in enumerate(scored) if s.score >= min_heur),
+        key=lambda i: scored[i].score,
+        reverse=True,
+    )[:max_jobs]
+
+    refined = 0
+    for i in candidates:
         try:
-            scored = llm_score(job, cand, model)
-            if not scored.reasons:
-                scored.reasons.append("Avaliado por LLM")
-            return scored
-        except Exception as exc:  # rede, parsing, quota... cai na heuristica
-            scored = heuristic_score(job, cand)
-            scored.reasons.append(f"(LLM indisponivel: {exc}; usei heuristica)")
-            return scored
-    return heuristic_score(job, cand)
+            new = llm_score(jobs[i], cand, model)
+            if not new.reasons:
+                new.reasons.append("Avaliado por LLM")
+            scored[i] = new
+            refined += 1
+        except Exception as exc:  # rede, parsing, quota... mantem a heuristica
+            scored[i].reasons.append(f"(LLM falhou: {exc}; mantida heuristica)")
+    print(f"    LLM refinou {refined}/{len(candidates)} vagas (heuristica >= {min_heur})")
+    return scored

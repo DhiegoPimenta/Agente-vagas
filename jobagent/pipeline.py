@@ -8,7 +8,7 @@ from .forms import classify_form
 from .models import Job, Scored
 from .report import build_report
 from .routing import route
-from .scoring import score_job
+from .scoring import score_all
 from .sources import BLOCKED, build_sources
 from .store import Store
 
@@ -48,12 +48,10 @@ def run(config_path: str, dry_run: bool = False) -> int:
     print(f"[2] {len(collected)} coletadas - {len(deduped)} unicas - {len(fresh)} novas (nao vistas antes)")
 
     print("[3] Score + roteamento")
-    scored: list[Scored] = []
-    for job in fresh:
-        s = score_job(job, cand, cfg)
-        s.form_complexity = classify_form(job)
+    scored: list[Scored] = score_all(fresh, cand, cfg)
+    for s in scored:
+        s.form_complexity = classify_form(s.job)
         route(s, cfg)
-        scored.append(s)
         if not dry_run:
             store.upsert(s)
 
